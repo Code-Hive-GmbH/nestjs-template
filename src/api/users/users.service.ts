@@ -1,15 +1,19 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '@utils/prisma/prisma.service';
 
 import { BcryptService } from '@utils/auth/bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { EntityManager } from '@mikro-orm/core';
+import { User } from '@api/users/entities/user.entity';
+import { omit } from 'lodash';
+import { Org } from '@api/org/entities/org.entity';
+import { PasswordReset } from '@utils/auth/entities/password-reset.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
-    private readonly prismaService: PrismaService,
+    private readonly em: EntityManager,
     private readonly bcryptService: BcryptService,
   ) {}
 
@@ -23,32 +27,33 @@ export class UsersService {
       );
     }
 
+    // Create personal organization for user
+    const readableName = data.name || data.username || data.email;
+    const org = new Org();
+    await this.em.assign(org, {
+      name: `${readableName}'s Personal Organization`,
+      domain: `${readableName}.personal`,
+    });
+    await this.em.persist(org);
+
     const passwordHash = await this.bcryptService.hash(data.password);
     const refreshTokenHash = !!data.refreshToken
       ? await this.bcryptService.hash(data.refreshToken)
       : null;
-    const readableName = data.name || data.username || data.email;
-    return this.prismaService.user.create({
-      data: {
-        email: data.email,
-        passwordHash: passwordHash,
-        username: data.username,
-        name: data.name,
-        timezone: data.timezone,
-        refreshToken: refreshTokenHash,
-        organization: {
-          create: {
-            name: `${readableName}'s Personal Organization`,
-            domain: `${readableName}.personal`,
-          },
-        },
-      },
+    const user = new User();
+    await this.em.assign(user, {
+      ...omit(data, ['password', 'refreshToken']),
+      passwordHash,
+      refreshToken: refreshTokenHash,
+      organization: org,
     });
+
+    await this.em.persistAndFlush(user);
   }
 
   async findOne(id: string) {
-    return this.prismaService.user.findUnique({
-      where: { id: id },
+    return this.em.findOne(User, id, {
+      populate: ['organization'],
     });
   }
 
@@ -76,20 +81,23 @@ export class UsersService {
     if (passwordHash) {
       data.passwordHash = passwordHash;
     }
-    return this.prismaService.user.update({
-      where: { id: id },
-      data: data,
+    const existingUser = this.em.findOneOrFail(User, id);
+
+    this.em.assign(existingUser, {
+      ...omit(updateUserDto, ['password']),
+      passwordHash,
     });
+    await this.em.flush();
+
+    return this.em.refresh(existingUser);
   }
 
   async remove(id: string) {
-    return this.prismaService.user.delete({ where: { id: id } });
+    return this.em.removeAndFlush(await this.em.findOneOrFail(User, id));
   }
 
   async deleteAllPAsswordResetsByUserId(userId: string) {
-    return this.prismaService.passwordReset.deleteMany({
-      where: { userId: userId },
-    });
+    this.em.removeAndFlush(await this.em.find(PasswordReset, { user: userId }));
   }
 
   async createPasswordReset(userId: string, token: string) {

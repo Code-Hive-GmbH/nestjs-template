@@ -9,7 +9,7 @@ import { AuthController } from '@utils/auth/auth.controller';
 import { AuthModule } from '@utils/auth/auth.module';
 import { configValidationSchema } from '@utils/config/config';
 import { FastifyDomainFilterMiddleware } from '@utils/middleware/domain-filter.middleware';
-import { PrismaService } from '@utils/prisma/prisma.service';
+import { OrmModule } from '@orm/orm.module';
 
 @Module({
   imports: [
@@ -20,9 +20,10 @@ import { PrismaService } from '@utils/prisma/prisma.service';
       cache: true,
       validationSchema: configValidationSchema,
     }),
+    OrmModule,
   ],
   controllers: [AppController],
-  providers: [AppService, PrismaService],
+  providers: [AppService],
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {

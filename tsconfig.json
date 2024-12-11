@@ -14,7 +14,8 @@
       "@app/*": ["src/app/*"],
       "@api/*": ["src/api/*"],
       "@client/*": ["src/client/*"],
-      "@utils/*": ["src/utils/*"]
+      "@utils/*": ["src/utils/*"],
+      "@orm/*": ["src/orm/*"],
     },
     "incremental": true,
     "skipLibCheck": true,
